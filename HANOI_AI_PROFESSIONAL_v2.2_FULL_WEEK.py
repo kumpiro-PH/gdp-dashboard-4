@@ -667,21 +667,54 @@ if "1." in menu:
         st.write(f"🔝 Top digit ranking: `{', '.join(p['top_ordered'][:5])}`")
         st.write(f"🔻 Bottom digit ranking: `{', '.join(p['bottom_ordered'][:5])}`")
 
+        # User-requested compact forecast presentation for Streamlit.
+        st.subheader("🎯 แนวทางเลขงวดถัดไป")
+        st.caption(f"{selected_day_th} | ใช้ฐานล่าสุด {latest['date']} | แนวทางจาก HANOI AI v2.3")
+
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric(label="🎯 เลขเด่น (Top Pick)", value=p["den"], delta=f"Score: {p['scores'][p['den']]:.2f}")
+            st.metric(label="🎯 เลขเด่น", value=p["den"], delta=f"Score: {p['scores'][p['den']]:.2f}")
         with col2:
             st.metric(label="🥈 เลขรอง", value=" - ".join(p["rong"]))
         with col3:
             st.metric(label="🥉 เลขกัน", value=" - ".join(p["kan"]))
 
-        st.subheader("💡 แนวทางตัวเลขจัดชุด")
-        st.markdown(f"**5D Smart Permutation:** `{', '.join(p['five_digits'])}`")
-        st.markdown(f"**4D Smart Permutation:** `{', '.join(p['four_digits'])}`")
-        st.markdown(f"**3D Smart Permutation:** `{', '.join(p['triples'])}`")
-        st.markdown(f"**2D เน้นไป-กลับ:** `{', '.join(p['pairs'])}`")
-        st.markdown(f"**เบิ้ล:** `{', '.join(p['doubles'])}`")
-        st.markdown(f"**หาม:** `{', '.join(p['sandwiches'])}`")
+        pairs = list(p.get("pairs", []))
+        first_tail = str(p.get("first_prize_tail", "")).zfill(2)
+        emphasized_2d = [first_tail, first_tail[::-1]] if first_tail else []
+        secondary_2d = [x for x in pairs if x not in emphasized_2d]
+
+        st.markdown("#### 2 ตัวล่าง เน้นเป็นพิเศษ")
+        if emphasized_2d:
+            st.success("**" + "  •  ".join(emphasized_2d) + "**")
+        else:
+            st.info("ยังไม่มีเลขท้ายรางวัลที่ 1 ที่ใช้เป็นสัญญาณ 2D ได้")
+        if secondary_2d:
+            st.write("เลขรอง: " + " - ".join(secondary_2d[:8]))
+
+        st.markdown("#### 3 ตัวบน")
+        st.code(" - ".join(p["triples"][:10]) if p.get("triples") else "ยังไม่มีชุด 3 ตัว")
+
+        st.divider()
+        st.subheader("⭐ สรุปชุดที่ผมให้น้ำหนัก")
+        summary_rows = [
+            ("2 ตัวเน้น", " - ".join(emphasized_2d) if emphasized_2d else "—"),
+            ("2 ตัวรอง", " - ".join(secondary_2d[:3]) if secondary_2d else "—"),
+            ("3 ตัวเน้น", " - ".join(p["triples"][:3]) if p.get("triples") else "—"),
+            ("เลขเด่น", p["den"]),
+            ("เลขรอง", " - ".join(p["rong"])),
+            ("เลขกัน", " - ".join(p["kan"])),
+        ]
+        for label, value in summary_rows:
+            st.markdown(f"**{label}:** `{value}`")
+
+        with st.expander("ดูชุดเลขและรายละเอียดเพิ่มเติม"):
+            st.markdown(f"**5D Smart Permutation:** `{', '.join(p['five_digits'])}`")
+            st.markdown(f"**4D Smart Permutation:** `{', '.join(p['four_digits'])}`")
+            st.markdown(f"**3D Smart Permutation:** `{', '.join(p['triples'])}`")
+            st.markdown(f"**2D ทั้งหมด:** `{', '.join(pairs)}`")
+            st.markdown(f"**เบิ้ล:** `{', '.join(p['doubles'])}`")
+            st.markdown(f"**หาม:** `{', '.join(p['sandwiches'])}`")
 
 elif "2." in menu:
     st.header("📝 อัปเดตผลรางวัลหวยฮานอย (ซิงก์แยกไฟล์รายวันขึ้น GitHub)")
