@@ -552,14 +552,28 @@ def full_week_status():
 # 🔍 ฟังก์ชันเสริมวิเคราะห์ผลรางวัลล่าสุด
 # ==========================================
 def analyze_latest_result(special_str, top3_str, bottom2_str):
-    sp = str(special_str).zfill(5)
-    t3 = str(top3_str).zfill(3)
-    b2 = str(bottom2_str).zfill(2)
-    
-    all_digits = list(sp + t3 + b2)
-    digit_counts = Counter(all_digits)
-    most_common_digits = [item[0] for item in digit_counts.most_common(3)]
-    return most_common_digits
+    """Return three ranked digits safely, even when CSV fields are blank or masked."""
+    def clean_digits(value):
+        if value is None or pd.isna(value):
+            return ""
+        return "".join(ch for ch in str(value).strip() if ch.isdigit())
+
+    sp = clean_digits(special_str)
+    t3 = clean_digits(top3_str)
+    b2 = clean_digits(bottom2_str)
+
+    if sp:
+        sp = sp.zfill(5)[-5:]
+    if t3:
+        t3 = t3.zfill(3)[-3:]
+    if b2:
+        b2 = b2.zfill(2)[-2:]
+
+    digit_counts = Counter(sp + t3 + b2)
+    ranked = [digit for digit, _ in digit_counts.most_common(3)]
+    while len(ranked) < 3:
+        ranked.append("—")
+    return ranked
 
 
 # --- STREAMLIT UI ---
@@ -609,7 +623,13 @@ if "1." in menu:
         
         # แสดงผลวิเคราะห์เสริมจากผลรางวัลงวดล่าสุด
         top_draw_digits = analyze_latest_result(latest['special'], latest['top_3'], latest['bottom_2'])
-        st.write(f"🔍 **วิเคราะห์เจาะลึกจากงวดล่าสุด:** เลขที่ออกซ้ำบ่อยสุดคือ `{top_draw_digits[0]}` (รอง: `{top_draw_digits[1]}` - `{top_draw_digits[2]}`)")
+        st.write(
+            f"🔍 **วิเคราะห์เจาะลึกจากงวดล่าสุด:** "
+            f"เลขที่ออกซ้ำบ่อยสุดคือ `{top_draw_digits[0]}` "
+            f"(รอง: `{top_draw_digits[1]}` - `{top_draw_digits[2]}`)"
+        )
+        if top_draw_digits[0] == "—":
+            st.warning("ข้อมูลผลรางวัลล่าสุดไม่มีตัวเลขที่ใช้วิเคราะห์ได้ กรุณาตรวจสอบแถวล่าสุดใน CSV")
         
         st.write(f"📅 เลขประจำวัน (Daily 6-Digit) สำหรับ {selected_day_th}: `{p['daily']}`")
         st.write(f"🔝 Top digit ranking: `{', '.join(p['top_ordered'][:5])}`")
