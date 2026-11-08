@@ -7,7 +7,7 @@ import base64
 import requests
 from io import StringIO
 
-st.set_page_config(page_title="HANOI AI PROFESSIONAL v2.2", layout="wide")
+st.set_page_config(page_title="HANOI AI PROFESSIONAL v2.3", layout="wide")
 
 MIN_HISTORY_FOR_DYNAMIC_WEIGHT = 5
 RECENT_WINDOW = 30
@@ -48,6 +48,7 @@ FORMULAS = [
     "Pair Relationship",
     "Hot-Cold Momentum",
     "Repeat & Echo",
+    "First Prize Tail 2D",
 ]
 
 def zfill_num(value, width):
@@ -277,6 +278,14 @@ def formula_candidates(base_t3, base_b2, next_day, history=None):
     current_top = zfill_num(base_t3, 3)
     current_bottom = zfill_num(base_b2, 2)
 
+    # Focused 2D source: last two digits of the latest first-prize number.
+    latest_row = _recent_history(history, 1)
+    latest_first_prize_raw = str(latest_row.iloc[0].get("first_prize", "")).strip() if not latest_row.empty else ""
+    latest_first_prize = zfill_num(latest_first_prize_raw, 5) if latest_first_prize_raw else ""
+    first_prize_tail = latest_first_prize[-2:] if latest_first_prize else ""
+    if first_prize_tail:
+        candidates["First Prize Tail 2D"].update(first_prize_tail)
+
     # 11. Position Weight: recent frequency by position, separately for top/bottom.
     pos_top = Counter()
     pos_bottom = Counter()
@@ -336,6 +345,8 @@ def formula_candidates(base_t3, base_b2, next_day, history=None):
     trans["position_bottom"] = pos_bottom
     trans["position_top_by_position"] = pos_top_by_position
     trans["position_bottom_by_position"] = pos_bottom_by_position
+    trans["first_prize"] = latest_first_prize
+    trans["first_prize_tail"] = first_prize_tail
     trans["candidate_map"] = {name: set(candidates.get(name, set())) for name in FORMULAS}
     return candidates, daily, trans
 
@@ -343,6 +354,9 @@ def formula_candidates(base_t3, base_b2, next_day, history=None):
 def evaluate_formula(formula, trans, daily, actual_t3, actual_b2):
     """Digit-hit evaluation; 1 means at least one digit overlap, not exact prediction."""
     t3, b2 = zfill_num(actual_t3, 3), zfill_num(actual_b2, 2)
+    if formula == "First Prize Tail 2D":
+        tail = trans.get("first_prize_tail", "")
+        return 0, int(bool(tail) and bool(set(b2) & set(tail)))
     if formula == "Rotation":
         return int(t3 in trans["rotations"]), int(b2 in trans["rotations_b2"])
     if formula == "Mirror":
@@ -361,6 +375,9 @@ def evaluate_formula(formula, trans, daily, actual_t3, actual_b2):
 def exact_pattern_score(formula, trans, daily, actual_t3, actual_b2):
     """Exact set/pattern score is kept separate from digit overlap."""
     t3, b2 = zfill_num(actual_t3, 3), zfill_num(actual_b2, 2)
+    if formula == "First Prize Tail 2D":
+        tail = trans.get("first_prize_tail", "")
+        return 0.0, float(bool(tail) and b2 == tail)
     if formula == "Rotation":
         return float(t3 in trans["rotations"]), float(b2 in trans["rotations_b2"])
     if formula == "Mirror":
@@ -458,8 +475,12 @@ def digit_scores(df, next_day):
     for formula in FORMULAS:
         w = weights.get(formula, 1.0)
         for digit in candidates.get(formula, set()):
-            top_scores[digit] += w
-            bottom_scores[digit] += w
+            if formula == "First Prize Tail 2D":
+                # First-prize ending contributes only to the 2D-lower model.
+                bottom_scores[digit] += 1.50 * w
+            else:
+                top_scores[digit] += w
+                bottom_scores[digit] += w
 
     # Position-specific frequency from latest 30 rows (not oldest rows).
     recent = hist.head(min(30, len(hist)))
@@ -515,6 +536,13 @@ def generate_prediction(df, next_day):
     top4 = top_ordered[:5]
     bottom5 = bottom_ordered[:5]
     pairs = _ranked_permutations(bottom5, bottom_scores, 2, 10, position_scores[3:5])
+    first_prize_tail = zfill_num(latest.get("first_prize", ""), 5)[-2:]
+    if str(latest.get("first_prize", "")).strip():
+        # Prioritize exact first-prize ending, then its reverse, then model-ranked pairs.
+        prioritized = [first_prize_tail, first_prize_tail[::-1]]
+        pairs = prioritized + [
+            pair for pair in pairs if pair not in prioritized
+        ][:max(0, 10 - len(prioritized))]
     triples = _ranked_permutations(top_ordered[:5], top_scores, 3, 10, position_scores[:3])
     four_digits = _ranked_permutations(top4, top_scores, 4, 10, position_scores[:4])
     five_digits = _ranked_permutations(top5, scores, 5, 10, position_scores[:5])
@@ -528,6 +556,8 @@ def generate_prediction(df, next_day):
         "den": den, "rong": rong, "kan": kan, "pairs": pairs,
         "triples": triples, "four_digits": four_digits, "five_digits": five_digits,
         "doubles": doubles, "sandwiches": sandwiches, "weights": weights,
+        "latest_first_prize": zfill_num(latest.get("first_prize", ""), 5),
+        "first_prize_tail": first_prize_tail,
     }
 
 
@@ -577,8 +607,8 @@ def analyze_latest_result(special_str, top3_str, bottom2_str):
 
 
 # --- STREAMLIT UI ---
-st.title("🇻🇳 HANOI AI PROFESSIONAL v2.2")
-st.markdown("Adaptive Pattern Engine | 10 สูตรเดิม + 5 Adaptive Engines | Full Week | GitHub Sync แยกไฟล์รายวัน")
+st.title("🇻🇳 HANOI AI PROFESSIONAL v2.3")
+st.markdown("Adaptive Pattern Engine | 10 สูตรเดิม + 5 Adaptive Engines + First Prize Tail 2D | Full Week | GitHub Sync แยกไฟล์รายวัน")
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 รีเฟรช / ดึงข้อมูลล่าสุด"):
@@ -631,6 +661,8 @@ if "1." in menu:
         if top_draw_digits[0] == "—":
             st.warning("ข้อมูลผลรางวัลล่าสุดไม่มีตัวเลขที่ใช้วิเคราะห์ได้ กรุณาตรวจสอบแถวล่าสุดใน CSV")
         
+        st.write(f"🏆 **รางวัลที่ 1:** `{p['latest_first_prize']}` | **2 ตัวท้ายรางวัลที่ 1:** `{p['first_prize_tail']}`")
+        st.info(f"🎯 First Prize Tail 2D: เพิ่มน้ำหนักเลข `{p['first_prize_tail']}` เฉพาะการจัดอันดับ 2 ตัวล่าง")
         st.write(f"📅 เลขประจำวัน (Daily 6-Digit) สำหรับ {selected_day_th}: `{p['daily']}`")
         st.write(f"🔝 Top digit ranking: `{', '.join(p['top_ordered'][:5])}`")
         st.write(f"🔻 Bottom digit ranking: `{', '.join(p['bottom_ordered'][:5])}`")
