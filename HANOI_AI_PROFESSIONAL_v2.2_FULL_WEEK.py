@@ -536,6 +536,7 @@ def generate_prediction(df, next_day):
     top4 = top_ordered[:5]
     bottom5 = bottom_ordered[:5]
     pairs = _ranked_permutations(bottom5, bottom_scores, 2, 10, position_scores[3:5])
+    top_pairs = _ranked_permutations(top_ordered[:5], top_scores, 2, 10, position_scores[:2])
     first_prize_tail = zfill_num(latest.get("first_prize", ""), 5)[-2:]
     if str(latest.get("first_prize", "")).strip():
         # Prioritize exact first-prize ending, then its reverse, then model-ranked pairs.
@@ -554,6 +555,7 @@ def generate_prediction(df, next_day):
         "top_scores": top_scores, "bottom_scores": bottom_scores,
         "top_ordered": top_ordered, "bottom_ordered": bottom_ordered,
         "den": den, "rong": rong, "kan": kan, "pairs": pairs,
+        "top_pairs": top_pairs,
         "triples": triples, "four_digits": four_digits, "five_digits": five_digits,
         "doubles": doubles, "sandwiches": sandwiches, "weights": weights,
         "latest_first_prize": zfill_num(latest.get("first_prize", ""), 5),
@@ -667,9 +669,9 @@ if "1." in menu:
         st.write(f"🔝 Top digit ranking: `{', '.join(p['top_ordered'][:5])}`")
         st.write(f"🔻 Bottom digit ranking: `{', '.join(p['bottom_ordered'][:5])}`")
 
-        # User-requested compact forecast presentation for Streamlit.
+        # Forecast layout: emphasize 3D upper, 2D upper and 2D lower separately.
         st.subheader("🎯 แนวทางเลขงวดถัดไป")
-        st.caption(f"{selected_day_th} | ใช้ฐานล่าสุด {latest['date']} | แนวทางจาก HANOI AI v2.3")
+        st.caption(f"{selected_day_th} | ใช้ฐานล่าสุด {latest['date']} | HANOI AI v2.3")
 
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -679,28 +681,42 @@ if "1." in menu:
         with col3:
             st.metric(label="🥉 เลขกัน", value=" - ".join(p["kan"]))
 
+        emphasized_3d = p.get("triples", [])[:3]
+        st.markdown("#### 🔺 3 ตัวบน เน้นพิเศษ")
+        if emphasized_3d:
+            st.success("**" + "  •  ".join(emphasized_3d) + "**")
+        else:
+            st.info("ยังไม่มีชุด 3 ตัวบน")
+
+        top_pairs = p.get("top_pairs", [])
+        emphasized_top_2d = top_pairs[:3]
+        st.markdown("#### 🔹 2 ตัวบน เน้นพิเศษ")
+        if emphasized_top_2d:
+            st.success("**" + "  •  ".join(emphasized_top_2d) + "**")
+            if len(top_pairs) > 3:
+                st.write("เลขรอง: " + " - ".join(top_pairs[3:8]))
+        else:
+            st.info("ยังไม่มีชุด 2 ตัวบน")
+
         pairs = list(p.get("pairs", []))
         first_tail = str(p.get("first_prize_tail", "")).zfill(2)
-        emphasized_2d = [first_tail, first_tail[::-1]] if first_tail else []
-        secondary_2d = [x for x in pairs if x not in emphasized_2d]
-
-        st.markdown("#### 2 ตัวล่าง เน้นเป็นพิเศษ")
-        if emphasized_2d:
-            st.success("**" + "  •  ".join(emphasized_2d) + "**")
+        emphasized_bottom_2d = [first_tail, first_tail[::-1]] if first_tail else []
+        secondary_bottom_2d = [x for x in pairs if x not in emphasized_bottom_2d]
+        st.markdown("#### 🔻 2 ตัวล่าง เน้นพิเศษ")
+        if emphasized_bottom_2d:
+            st.success("**" + "  •  ".join(emphasized_bottom_2d) + "**")
         else:
             st.info("ยังไม่มีเลขท้ายรางวัลที่ 1 ที่ใช้เป็นสัญญาณ 2D ได้")
-        if secondary_2d:
-            st.write("เลขรอง: " + " - ".join(secondary_2d[:8]))
-
-        st.markdown("#### 3 ตัวบน")
-        st.code(" - ".join(p["triples"][:10]) if p.get("triples") else "ยังไม่มีชุด 3 ตัว")
+        if secondary_bottom_2d:
+            st.write("เลขรอง: " + " - ".join(secondary_bottom_2d[:8]))
 
         st.divider()
         st.subheader("⭐ สรุปชุดที่ผมให้น้ำหนัก")
         summary_rows = [
-            ("2 ตัวเน้น", " - ".join(emphasized_2d) if emphasized_2d else "—"),
-            ("2 ตัวรอง", " - ".join(secondary_2d[:3]) if secondary_2d else "—"),
-            ("3 ตัวเน้น", " - ".join(p["triples"][:3]) if p.get("triples") else "—"),
+            ("3 ตัวบนเน้น", " - ".join(emphasized_3d) if emphasized_3d else "—"),
+            ("2 ตัวบนเน้น", " - ".join(emphasized_top_2d) if emphasized_top_2d else "—"),
+            ("2 ตัวล่างเน้น", " - ".join(emphasized_bottom_2d) if emphasized_bottom_2d else "—"),
+            ("2 ตัวล่างรอง", " - ".join(secondary_bottom_2d[:3]) if secondary_bottom_2d else "—"),
             ("เลขเด่น", p["den"]),
             ("เลขรอง", " - ".join(p["rong"])),
             ("เลขกัน", " - ".join(p["kan"])),
@@ -711,8 +727,9 @@ if "1." in menu:
         with st.expander("ดูชุดเลขและรายละเอียดเพิ่มเติม"):
             st.markdown(f"**5D Smart Permutation:** `{', '.join(p['five_digits'])}`")
             st.markdown(f"**4D Smart Permutation:** `{', '.join(p['four_digits'])}`")
-            st.markdown(f"**3D Smart Permutation:** `{', '.join(p['triples'])}`")
-            st.markdown(f"**2D ทั้งหมด:** `{', '.join(pairs)}`")
+            st.markdown(f"**3D ทั้งหมด:** `{', '.join(p['triples'])}`")
+            st.markdown(f"**2D บนทั้งหมด:** `{', '.join(top_pairs)}`")
+            st.markdown(f"**2D ล่างทั้งหมด:** `{', '.join(pairs)}`")
             st.markdown(f"**เบิ้ล:** `{', '.join(p['doubles'])}`")
             st.markdown(f"**หาม:** `{', '.join(p['sandwiches'])}`")
 
